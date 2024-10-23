@@ -9,25 +9,25 @@ model.eval()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
-# Step 2: Transform Function (Grayscale and Resize)
+# Step 2: Transform Function (Grayscale and Resize to 120p)
 transform = T.Compose([
     T.ToPILImage(),
-    T.Resize((240, 320)),  # 240p resolution
+    T.Resize((120, 160)),  # Adjusted to 120p resolution
     T.Grayscale(num_output_channels=1),  # Convert to grayscale
     T.ToTensor()
 ])
 
 # Step 3: Capture Video (Set to 15 FPS)
 cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FPS, 15)  # Attempt to set frame rate to 15 FPS
+cap.set(cv2.CAP_PROP_FPS, 3)  # Set frame rate to 15 FPS
 
 while True:
     ret, frame = cap.read()
     if not ret:
         break
 
-    # Resize the frame to a smaller resolution to reduce processing time
-    frame = cv2.resize(frame, (320, 240))
+    # Resize the frame to 120p resolution to reduce processing time
+    frame = cv2.resize(frame, (160, 120))
     
     # Convert to grayscale
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
