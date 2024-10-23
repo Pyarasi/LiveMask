@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+.DS_Store
+
+# Virtual Environment
+venv/
+
+# Docker
+**/Dockerfile
+**/docker-compose.yml
+
+# Dataset & Models
+data/
+models/
