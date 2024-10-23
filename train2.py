@@ -11,7 +11,6 @@ from torchvision.models.detection.backbone_utils import BackboneWithFPN
 from torchvision.models.detection.rpn import AnchorGenerator
 from torchvision.ops import MultiScaleRoIAlign
 
-# Step 1: Define Custom Dataset
 class FaceDataset(Dataset):
     def __init__(self, root_dir, split='train'):
         self.root_dir = os.path.join(root_dir, split)
@@ -50,14 +49,11 @@ class FaceDataset(Dataset):
 def collate_fn(batch):
     return tuple(zip(*batch))
 
-# Step 2: Load Pre-Trained Model and Adjust
 from torchvision.models.detection import maskrcnn_resnet50_fpn
 
 def get_model(num_classes):
-    # Use the updated `weights` parameter to avoid warnings
     model = maskrcnn_resnet50_fpn(weights=torchvision.models.detection.MaskRCNN_ResNet50_FPN_Weights.DEFAULT)
 
-    # Replace the head with a new one (correctly set for both the box and mask predictors)
     in_features_box = model.roi_heads.box_predictor.cls_score.in_features
     model.roi_heads.box_predictor = torchvision.models.detection.faster_rcnn.FastRCNNPredictor(in_features_box, num_classes)
 
@@ -67,14 +63,13 @@ def get_model(num_classes):
 
     return model
 
-# Step 3: Train the Model and Save Weights
 def train_model():
     dataset = FaceDataset("data/processed/wider_face", split='train')
     dataloader = DataLoader(
         dataset, batch_size=2, shuffle=True, num_workers=0, collate_fn=collate_fn
     )
 
-    model = get_model(num_classes=2)  # Background + Face
+    model = get_model(num_classes=2)  
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     print(f"Using device: {device}")
     model.to(device)
