@@ -3,6 +3,9 @@ import torch
 from torchvision.models.segmentation import fcn_resnet50
 import torchvision.transforms as T
 
+#uses Haar Cascades
+#uses simple neural networks to learn classic edges and lines assosciated with facial features
+# very fast and cheap to run
 model = fcn_resnet50(weights="FCN_ResNet50_Weights.COCO_WITH_VOC_LABELS_V1")
 model.eval()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -1,18 +1,19 @@
-import glob #for searching images in directories
-import os #directory path operations
+import glob
+import os
 import time
 import torch
 import torchvision
 from torchvision.models.detection import MaskRCNN
 from torchvision.transforms import functional as F
 from torch.utils.data import DataLoader, Dataset
-import cv2 #for webcam related operations
+import cv2
+from torchvision.models import resnet18
 from torchvision.models.detection.backbone_utils import BackboneWithFPN
 from torchvision.models.detection.rpn import AnchorGenerator
 from torchvision.ops import MultiScaleRoIAlign
 
-class FaceDataset(Dataset):  #for loading images from the dataset for training
-    def __init__(self, root_dir, split='train'):  # split exists to choose between training and test data
+class FaceDataset(Dataset):
+    def __init__(self, root_dir, split='train'):
         self.root_dir = os.path.join(root_dir, split)
         extensions = ['jpg', 'jpeg', 'png', 'bmp']
         self.image_paths = []
@@ -26,7 +27,7 @@ class FaceDataset(Dataset):  #for loading images from the dataset for training
         if not self.image_paths:
             raise FileNotFoundError(f"No images found in {self.root_dir}")
         
-    def __len__(self):  #returns the number of images
+    def __len__(self):
         return len(self.image_paths)
     
     def __getitem__(self, idx):
@@ -34,34 +35,77 @@ class FaceDataset(Dataset):  #for loading images from the dataset for training
         image = cv2.imread(img_path)
         if image is None:
             raise ValueError(f"Image at path {img_path} could not be read.")
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  #converts to RGB
-        image = F.to_tensor(image)  #converts to tensor (numerical representation of images, 3 dimensional array)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = F.to_tensor(image)
         
         _, height, width = image.shape
         target = {
-            'boxes': torch.tensor([[0, 0, width, height]], dtype=torch.float32),  #where is the image
-            'labels': torch.tensor([1], dtype=torch.int64),  #what is the image
-            'masks': torch.zeros((1, height, width), dtype=torch.uint8)  #how is the image filling the box
+            'boxes': torch.tensor([[0, 0, width, height]], dtype=torch.float32),
+            'labels': torch.tensor([1], dtype=torch.int64),
+            'masks': torch.zeros((1, height, width), dtype=torch.uint8)
         }
         
         return image, target
 
 def collate_fn(batch):
-    return tuple(zip(*batch))   
+    return tuple(zip(*batch))
 
-from torchvision.models.detection import maskrcnn_resnet50_fpn
+def get_backbone():
+    resnet_backbone = resnet18(weights=None)
+
+    weights_path = "models/resnet18-f37072fd.pth"  
+    if os.path.exists(weights_path):
+        state_dict = torch.load(weights_path)
+        resnet_backbone.load_state_dict(state_dict)
+    else:
+        print("Warning: Pretrained weights not found. Initializing model without pretrained weights.")
+
+    return_layers = {'layer2': '0', 'layer3': '1', 'layer4': '2'}
+    in_channels_list = [128, 256, 512]
+    out_channels = 256
+
+    backbone = BackboneWithFPN(
+        resnet_backbone,
+        return_layers,
+        in_channels_list,
+        out_channels,
+    )
+    return backbone
 
 def get_model(num_classes):
-    model = maskrcnn_resnet50_fpn(weights=torchvision.models.detection.MaskRCNN_ResNet50_FPN_Weights.DEFAULT)
+    backbone = get_backbone()
 
-    in_features_box = model.roi_heads.box_predictor.cls_score.in_features
-    model.roi_heads.box_predictor = torchvision.models.detection.faster_rcnn.FastRCNNPredictor(in_features_box, num_classes)
+    anchor_sizes = ((32,), (64,), (128,), (256,))  
+    aspect_ratios = ((0.5, 1.0, 2.0),) * len(anchor_sizes)
+    anchor_generator = AnchorGenerator(sizes=anchor_sizes, aspect_ratios=aspect_ratios)
 
-    in_features_mask = model.roi_heads.mask_predictor.conv5_mask.in_channels
-    hidden_layer = 256
-    model.roi_heads.mask_predictor = torchvision.models.detection.mask_rcnn.MaskRCNNPredictor(in_features_mask, hidden_layer, num_classes)
+    roi_pooler = MultiScaleRoIAlign(
+        featmap_names=['0', '1', '2', 'pool'],
+        output_size=7,
+        sampling_ratio=2,
+    )
 
+    mask_roi_pooler = MultiScaleRoIAlign(
+        featmap_names=['0', '1', '2', 'pool'],
+        output_size=14,
+        sampling_ratio=2,
+    )
+
+    model = MaskRCNN(
+        backbone,
+        num_classes=num_classes,
+        rpn_anchor_generator=anchor_generator,
+        box_roi_pool=roi_pooler,
+        mask_roi_pool=mask_roi_pooler,
+    )
     return model
+
+def print_feature_map_names(model, device):
+    model.eval()
+    dummy_input = torch.randn(1, 3, 224, 224).to(device)  
+    with torch.no_grad():
+        features = model.backbone(dummy_input)  
+        print("Feature map names:", list(features.keys()))
 
 def train_model():
     dataset = FaceDataset("data/processed/wider_face", split='train')
@@ -73,6 +117,8 @@ def train_model():
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     print(f"Using device: {device}")
     model.to(device)
+
+    print_feature_map_names(model, device)
 
     model.train()
 
@@ -103,6 +149,7 @@ def train_model():
             current_step += 1
 
             percent_completed = (current_step / total_steps) * 100
+
             elapsed_time = time.time() - start_time
             print(f"Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx+1}/{len(dataloader)}], "
                   f"Loss: {total_loss.item():.4f}, "
@@ -110,11 +157,8 @@ def train_model():
                   f"Elapsed Time: {elapsed_time/60:.2f} minutes")
 
         print(f"Epoch [{epoch+1}/{num_epochs}] completed, Total Loss: {epoch_loss:.4f}")
-    
-    torch.save(model.state_dict(), 'fine_tuned_mask_rcnn.pth')
     end_time = time.time()
     print(f"Training completed in {(end_time - start_time)/60:.2f} minutes")
-    print("Model weights saved as 'fine_tuned_mask_rcnn.pth'.")
 
 if __name__ == "__main__":
     train_model()

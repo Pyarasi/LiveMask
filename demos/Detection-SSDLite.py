@@ -4,6 +4,9 @@ from torchvision.models.detection import ssdlite320_mobilenet_v3_large
 import torchvision.transforms as T
 import time
 
+#what is ssd? (Single Shot Multibox detector)
+# detects in a single shot without backtracking unlike MaskRCNN
+# fast but less accurate 
 model = ssdlite320_mobilenet_v3_large(pretrained=True)
 model.eval()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,7 +37,7 @@ while True:
         continue
 
     frame = cv2.resize(frame, (120, 80))
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) #grayscale conversion
 
     img_tensor = transform(gray_frame).unsqueeze(0).to(device)
 
@@ -43,7 +46,7 @@ while True:
 
     for idx, box in enumerate(outputs[0]['boxes']):
         score = outputs[0]['scores'][idx].item()
-        if score > 0.5:
+        if score > 0.5:   #50% score
             x1, y1, x2, y2 = map(int, box.tolist())
             cv2.rectangle(gray_frame, (x1, y1), (x2, y2), (0, 255, 0), 1)
 
